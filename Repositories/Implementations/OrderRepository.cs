@@ -29,7 +29,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Customer)
             .Include(o => o.OrderItems)
                 .ThenInclude(i => i.Product)
-            .FirstOrDefaultAsync(o => o.Id == id);    }
+            .FirstOrDefaultAsync(o => o.Id == id);
+    }
 
     public async Task AddAsync(Order order)
     {

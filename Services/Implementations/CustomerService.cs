@@ -40,10 +40,13 @@ public class CustomerService : ICustomerService
         return MapToResponseDto(customer);
     }
 
-    private static CustomerResponseDto MapToResponseDto(Customer customer) => new CustomerResponseDto
+    private static CustomerResponseDto MapToResponseDto(Customer customer)
     {
-        Id = customer.Id,
-        Name = customer.Name,
-        Email = customer.Email,
-    };
+        return new CustomerResponseDto
+        {
+            Id = customer.Id,
+            Name = customer.Name,
+            Email = customer.Email
+        };
+    }
 }

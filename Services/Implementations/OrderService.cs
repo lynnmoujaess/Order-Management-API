@@ -1,4 +1,5 @@
-﻿using OrderManagement_Api.DTOs.Orders;
+﻿using OrderManagement_Api.Common.Exceptions;
+using OrderManagement_Api.DTOs.Orders;
 using OrderManagement_Api.Models;
 using OrderManagement_Api.Repositories.Interfaces;
 using OrderManagement_Api.Services.Interfaces;
@@ -11,44 +12,89 @@ public class OrderService : IOrderService
     private readonly ICustomerRepository _customerRepository;
     private readonly IProductRepository _productRepository;
 
-    public OrderService(IOrderRepository orderRepository, ICustomerRepository customerRepository,
-        IProductRepository productRepository)
+    public OrderService(IOrderRepository orderRepository, ICustomerRepository customerRepository, IProductRepository productRepository)
     {
         _orderRepository = orderRepository;
         _customerRepository = customerRepository;
         _productRepository = productRepository;
     }
-
+    
     public async Task<IEnumerable<OrderResponseDto>> GetAllAsync()
     {
         var orders = await _orderRepository.GetAllAsync();
         return orders.Select(MapToResponseDto);
+        
     }
 
-    public Task<OrderResponseDto?> GetByIdAsync(int id)
+    public async Task<OrderResponseDto?> GetByIdAsync(int id)
     {
-        throw new NotImplementedException();
+        var order = await _orderRepository.GetByIdAsync(id);
+        if (order is null) return null;
+        return MapToResponseDto(order);
     }
 
-    public Task<OrderResponseDto> CreateAsync(CreateOrderDto dto)
+    public async Task<OrderResponseDto> CreateAsync(CreateOrderDto dto)
     {
-        throw new NotImplementedException();
-    }
+        var customerExists = await _customerRepository.ExistsAsync(dto.CustomerId);
+        if (!customerExists) throw new NotFoundException($"Customer with id {dto.CustomerId} not found");
+        
+        var productIds = dto.OrderItems.Select(i => i.ProductId).ToList();
+        var products = await _productRepository.GetByIdsAsync(productIds);
+        
+        var orderItems = new List<OrderItem>();
 
-    private static OrderResponseDto MapToResponseDto(Order order) => new OrderResponseDto
-    {
-        Id = order.Id,
-        CustomerId = order.CustomerId,
-        CustomerName = order.Customer.Name,
-        OrderDate = order.OrderDate,
-        OrderItems = order.OrderItems.Select(i => new OrderItemResponseDto
+        foreach (var itemDto in dto.OrderItems)
         {
-            Id = i.Id,
-            ProductId = i.ProductId,
-            ProductName = i.Product.Name,
-            Quantity = i.Quantity,
-            UnitPrice = i.UnitPrice
-        }).ToList(),
-        TotalAmount = order.OrderItems.Sum(i => i.UnitPrice * i.Quantity)
-    };
+            var product = products.FirstOrDefault(p => p.Id == itemDto.ProductId);
+            
+            if (product is null)
+                throw new NotFoundException($"Product with id {itemDto.ProductId} not found");
+
+            if (product.Stock < itemDto.Quantity)
+                throw new BadRequestException($"Insufficient stock for product '{product.Name}'. Available: {product.Stock}, Requested: {itemDto.Quantity}");
+
+            // Reduce stock
+            product.Stock -= itemDto.Quantity;
+            
+            orderItems.Add(new OrderItem
+            {
+                ProductId = product.Id,
+                Quantity = itemDto.Quantity,
+                UnitPrice = product.Price
+            });
+        }
+        
+        var order = new Order
+        {
+            CustomerId = dto.CustomerId,
+            OrderDate = DateTime.Now,
+            OrderItems = orderItems
+        };
+        
+        await _orderRepository.AddAsync(order);
+        await _orderRepository.SaveChangesAsync();
+
+        var createdOrder = await _orderRepository.GetByIdAsync(order.Id);
+        return MapToResponseDto(createdOrder!);
+    }
+
+    private static OrderResponseDto MapToResponseDto(Order order)
+    {
+        return new OrderResponseDto
+        {
+            Id = order.Id,
+            CustomerId = order.CustomerId,
+            CustomerName = order.Customer!.Name,
+            OrderDate = order.OrderDate,
+            OrderItems = order.OrderItems.Select(i => new OrderItemResponseDto
+            {
+                Id = i.Id,
+                ProductId = i.ProductId,
+                ProductName = i.Product!.Name,
+                Quantity = i.Quantity,
+                UnitPrice = i.UnitPrice
+            }).ToList(),
+            TotalAmount = order.OrderItems.Sum(i => i.UnitPrice * i.Quantity)
+        };
+    }
 }

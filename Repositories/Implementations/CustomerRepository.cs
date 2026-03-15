@@ -24,6 +24,11 @@ public class CustomerRepository : ICustomerRepository
         return await _context.Customers.FindAsync(id);  
     }
 
+    public async Task<Boolean> ExistsAsync(int id)
+    {
+        return await _context.Customers.AnyAsync(c => c.Id == id);
+    }
+
     public async Task AddAsync(Customer customer)
     {
         await _context.Customers.AddAsync(customer);

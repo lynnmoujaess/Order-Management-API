@@ -2,6 +2,7 @@
 using OrderManagement_Api.Data;
 using OrderManagement_Api.Models;
 using OrderManagement_Api.Repositories.Interfaces;
+using OrderManagement_Api.Services.Implementations;
 
 namespace OrderManagement_Api.Repositories.Implementations;
 
@@ -22,6 +23,11 @@ public class ProductRepository : IProductRepository
     public async Task<Product?> GetByIdAsync(int id)
     {
         return await _context.Products.FindAsync(id);
+    }
+
+    public async Task<IEnumerable<Product>> GetByIdsAsync(List<int> productIds)
+    {
+        return await _context.Products.Where(p => productIds.Contains(p.Id)).ToListAsync();
     }
 
     public async Task AddAsync(Product product)
