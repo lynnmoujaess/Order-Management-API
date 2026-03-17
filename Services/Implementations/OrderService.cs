@@ -1,5 +1,7 @@
-﻿using OrderManagement_Api.Common.Exceptions;
+﻿using MassTransit;
+using OrderManagement_Api.Common.Exceptions;
 using OrderManagement_Api.DTOs.Orders;
+using OrderManagement_Api.Events;
 using OrderManagement_Api.Models;
 using OrderManagement_Api.Repositories.Interfaces;
 using OrderManagement_Api.Services.Interfaces;
@@ -11,12 +13,15 @@ public class OrderService : IOrderService
     private readonly IOrderRepository _orderRepository;
     private readonly ICustomerRepository _customerRepository;
     private readonly IProductRepository _productRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public OrderService(IOrderRepository orderRepository, ICustomerRepository customerRepository, IProductRepository productRepository)
+
+    public OrderService(IOrderRepository orderRepository, ICustomerRepository customerRepository, IProductRepository productRepository, IPublishEndpoint publishEndpoint)
     {
         _orderRepository = orderRepository;
         _customerRepository = customerRepository;
         _productRepository = productRepository;
+        _publishEndpoint = publishEndpoint;
     }
     
     public async Task<IEnumerable<OrderResponseDto>> GetAllAsync()
@@ -67,7 +72,7 @@ public class OrderService : IOrderService
         var order = new Order
         {
             CustomerId = dto.CustomerId,
-            OrderDate = DateTime.Now,
+            OrderDate = DateTime.UtcNow,
             OrderItems = orderItems
         };
         
@@ -75,6 +80,22 @@ public class OrderService : IOrderService
         await _orderRepository.SaveChangesAsync();
 
         var createdOrder = await _orderRepository.GetByIdAsync(order.Id);
+        
+        await _publishEndpoint.Publish(new OrderPlacedEvent
+        {
+            OrderId = createdOrder!.Id,
+            CustomerId = createdOrder.CustomerId,
+            OrderDate = createdOrder.OrderDate,
+            TotalAmount = createdOrder.OrderItems.Sum(i => i.UnitPrice * i.Quantity),
+            Items = createdOrder.OrderItems.Select(i => new OrderPlacedEventItem
+            {
+                ProductId = i.ProductId,
+                ProductName = i.Product.Name,
+                Quantity = i.Quantity,
+                UnitPrice = i.UnitPrice
+            }).ToList()
+        });
+        
         return MapToResponseDto(createdOrder!);
     }
 
